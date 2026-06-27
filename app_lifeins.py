@@ -9,113 +9,140 @@ Original file is located at
 
 import streamlit as st
 import pandas as pd
+import numpy as np
 import io
 import math
+import sympy as sp
+from scipy import integrate as sci_integrate
 
-# ── Page config ──────────────────────────────────────────────────────────────
+# ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(page_title="Life Insurance Pricing Engine", page_icon="📋", layout="centered")
 st.title("📋 Life Insurance Pricing Engine")
 
-# ── Upload mortality tables ───────────────────────────────────────────────────
-st.sidebar.header("1. Upload Mortality Tables")
-uploaded_file = st.sidebar.file_uploader("Upload your .xlsx mortality table file", type="xlsx")
+# ── Pre-load mortality tables ─────────────────────────────────────────────────
+@st.cache_data
+def load_lx_tables():
+    xl = pd.read_excel('mortality_tables.xlsx', sheet_name=None, header=2)
+    lx_tables = {}
+    for name, df in xl.items():
+        df = df.dropna(subset=['x'])
+        df['x'] = df['x'].astype(int)
+        lx_tables[name] = dict(zip(df['x'], df['lx']))
+    return lx_tables
 
-if uploaded_file:
-    file_bytes = uploaded_file.read()
+lx_tables = load_lx_tables()
+ELT15_Males   = lx_tables['ELT15 Males']
+ELT15_Females = lx_tables['ELT15 Females']
+AM92          = lx_tables['AM92']
+PMA92C        = lx_tables['PMA92C']
+PFA92C        = lx_tables['PFA92C']
+table_names   = list(lx_tables.keys())
 
-    def load_lx_tables(file_bytes):
-        xl = pd.read_excel(io.BytesIO(file_bytes), sheet_name=None, header=2)
-        lx_tables = {}
-        for name, df in xl.items():
-            df = df.dropna(subset=['x'])
-            df['x'] = df['x'].astype(int)
-            lx_tables[name] = dict(zip(df['x'], df['lx']))
-        return lx_tables
+# ─────────────────────────────────────────────────────────────────────────────
+# !! PASTE ALL YOUR FUNCTIONS HERE !!
+# Paste in this order:
+#   1. v, l, tpx, kqx, mu
+#   2. summation, simpson
+#   3. Whole_eoy, Whole_imm, Term_eoy, Term_imm, Endow_eoy, Endow_imm, Pure (single life)
+#   4. Whole_eoy_joint, Whole_imm_joint, Term_eoy_joint, Term_imm_joint,
+#      Endow_eoy_joint, Endow_imm_joint, Pure_joint
+#   5. dot_dot_a, no_dot_a, bar_a, dot_dot_t, no_dot_t, bar_t (single life)
+#   6. dot_dot_a_joint, no_dot_a_joint, bar_a_joint,
+#      dot_dot_t_joint, no_dot_t_joint, bar_t_joint
+#   7. tpxy, kqxy, muxy
+#   8. benefit, premium
+# ─────────────────────────────────────────────────────────────────────────────
 
-    lx_tables = load_lx_tables(file_bytes)
-    table_names = list(lx_tables.keys())
-    st.sidebar.success(f"✅ Loaded: {', '.join(table_names)}")
+# ── Benefit type options ──────────────────────────────────────────────────────
+BENEFIT_OPTIONS = {
+    'Whole Life End of Year':       'whole_eoy',
+    'Whole Life Immediate':         'whole_imm',
+    'Term Life End of Year':        'term_eoy',
+    'Term Life Immediate':          'term_imm',
+    'Endowment End of Year':        'endow_eoy',
+    'Endowment Immediate':          'endow_imm',
+    'Pure Endowment':               'pure',
+}
 
-    # ── Paste all your functions here ─────────────────────────────────────────
-    # v, l, tpx, kqx, mu, summation, simpson
-    # Whole_eoy, Whole_imm, Term_eoy, Term_imm, Endow_eoy, Endow_imm, Pure
-    # Whole_eoy_joint, Term_eoy_joint, etc.
-    # dot_dot_a, no_dot_a, bar_a, dot_dot_t, no_dot_t, bar_t
-    # dot_dot_a_joint, etc.
-    # benefit, premium
+BENEFIT_OPTIONS_JOINT = {
+    'Whole Life End of Year':       'whole_eoy_joint',
+    'Whole Life Immediate':         'whole_imm_joint',
+    'Term Life End of Year':        'term_eoy_joint',
+    'Term Life Immediate':          'term_imm_joint',
+    'Endowment End of Year':        'endow_eoy_joint',
+    'Endowment Immediate':          'endow_imm_joint',
+    'Pure Endowment':               'pure_joint',
+}
 
-    # ── Policy inputs ─────────────────────────────────────────────────────────
-    st.header("2. Policy Details")
+ANNUITY_OPTIONS = {
+    'Annually in Advance (Due)':        'due',
+    'Annually in Arrear (Immediate)':   'immediate',
+    'Continuously':                     'continuous',
+    'Term - Annually in Advance':       'term_due',
+    'Term - Annually in Arrear':        'term_immediate',
+    'Term - Continuously':              'term_continuous',
+}
 
-    col1, col2 = st.columns(2)
-    with col1:
-        policy_type = st.selectbox("Number of Lives", ["Single Life", "Joint Life"])
-        benefit_type = st.selectbox("Benefit Type", [
-            'whole_eoy', 'whole_imm',
-            'term_eoy', 'term_imm',
-            'endow_eoy', 'endow_imm',
-            'pure'
-        ])
-        annuity_type = st.selectbox("Premium Payment", [
-            'due', 'immediate', 'continuous',
-            'term_due', 'term_immediate', 'term_continuous'
-        ])
+# ── UI ────────────────────────────────────────────────────────────────────────
+st.header("1. Policy Details")
 
+policy_type  = st.selectbox("Number of Lives", ["Single Life", "Joint Life"])
+benefit_label  = st.selectbox("Benefit Type", list(BENEFIT_OPTIONS.keys()))
+annuity_label  = st.selectbox("Premium Payment", list(ANNUITY_OPTIONS.keys()))
+sum_assured    = st.number_input("Sum Assured (£)", min_value=1000, value=100000, step=1000)
+i              = st.number_input("Interest Rate", min_value=0.001, max_value=0.20, value=0.04, step=0.001, format="%.3f")
+
+st.header("2. Life Details")
+col1, col2 = st.columns(2)
+
+with col1:
+    st.subheader("Life 1")
+    x          = st.number_input("Age (x)", min_value=0, max_value=120, value=50)
+    table_name = st.selectbox("Mortality Table", table_names, key='t1')
+    table      = lx_tables[table_name]
+
+if policy_type == "Joint Life":
     with col2:
-        sum_assured = st.number_input("Sum Assured (£)", min_value=1000, value=100000, step=1000)
-        i = st.number_input("Interest Rate", min_value=0.001, max_value=0.20, value=0.04, step=0.001, format="%.3f")
-
-    st.header("3. Life Details")
-    col3, col4 = st.columns(2)
-    with col3:
-        st.subheader("Life 1")
-        x = st.number_input("Age (x)", min_value=0, max_value=120, value=50)
-        table_name = st.selectbox("Mortality Table", table_names, key='table1')
-        table = lx_tables[table_name]
-
-    if policy_type == "Joint Life":
-        with col4:
-            st.subheader("Life 2")
-            y = st.number_input("Age (y)", min_value=0, max_value=120, value=47)
-            table2_name = st.selectbox("Mortality Table", table_names, key='table2')
-            table2 = lx_tables[table2_name]
-            benefit_type = benefit_type + '_joint'
-            annuity_type_joint = annuity_type
-    else:
-        y = None
-        table2 = None
-        table2_name = None
-
-    has_term = any(x in benefit_type for x in ['term', 'endow', 'pure'])
-    if has_term:
-        n = st.number_input("Term (years)", min_value=1, max_value=60, value=20)
-    else:
-        n = None
-
-    # ── Calculate ─────────────────────────────────────────────────────────────
-    st.header("4. Results")
-    if st.button("Calculate Premium", type="primary"):
-        try:
-            P = premium(
-                x=x, i=i, table=table,
-                sum_assured=sum_assured,
-                benefit_type=benefit_type,
-                annuity_type=annuity_type,
-                n=n, y=y, table2=table2,
-                table_name=table_name,
-                table2_name=table2_name
-            )
-
-            col5, col6 = st.columns(2)
-            with col5:
-                st.metric("Net Annual Premium", f"£{P:,.2f}")
-            with col6:
-                st.metric("Sum Assured", f"£{sum_assured:,.2f}")
-
-            st.success(f"✅ Net Annual Premium: £{P:,.2f}")
-
-        except Exception as e:
-            st.error(f"Error: {e}")
-
+        st.subheader("Life 2")
+        y           = st.number_input("Age (y)", min_value=0, max_value=120, value=47)
+        table2_name = st.selectbox("Mortality Table", table_names, key='t2')
+        table2      = lx_tables[table2_name]
+    benefit_type = BENEFIT_OPTIONS_JOINT[benefit_label]
 else:
-    st.info("👈 Please upload your mortality tables file to get started.")
+    y = None
+    table2 = None
+    table2_name = None
+    benefit_type = BENEFIT_OPTIONS[benefit_label]
+
+annuity_type = ANNUITY_OPTIONS[annuity_label]
+
+has_term = any(x in benefit_type for x in ['term', 'endow', 'pure'])
+if has_term:
+    n = st.number_input("Term (years)", min_value=1, max_value=60, value=20)
+else:
+    n = None
+
+# ── Results ───────────────────────────────────────────────────────────────────
+st.header("3. Results")
+if st.button("Calculate Premium", type="primary"):
+    try:
+        P = premium(
+            x=x, i=i, table=table,
+            sum_assured=sum_assured,
+            benefit_type=benefit_type,
+            annuity_type=annuity_type,
+            n=n, y=y, table2=table2,
+            table_name=table_name,
+            table2_name=table2_name
+        )
+
+        col3, col4 = st.columns(2)
+        with col3:
+            st.metric("Net Annual Premium", f"£{P:,.2f}")
+        with col4:
+            st.metric("Sum Assured", f"£{sum_assured:,.2f}")
+
+        st.success(f"✅ Net Annual Premium: £{P:,.2f}")
+
+    except Exception as e:
+        st.error(f"Error: {e}")
