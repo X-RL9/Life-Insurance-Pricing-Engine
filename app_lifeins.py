@@ -22,7 +22,7 @@ st.title("📋 Life Insurance Pricing Engine")
 # ── Pre-load mortality tables ─────────────────────────────────────────────────
 @st.cache_data
 def load_lx_tables():
-    xl = pd.read_excel('2002_mortality_tables_single_lives.xlsx', sheet_name=None, header=2)
+    xl = pd.read_excel('2002 mortality_tables single lives.xlsx', sheet_name=None, header=2)
     lx_tables = {}
     for name, df in xl.items():
         df = df.dropna(subset=['x'])
