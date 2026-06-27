@@ -39,18 +39,214 @@ PFA92C        = lx_tables['PFA92C']
 table_names   = list(lx_tables.keys())
 
 # ─────────────────────────────────────────────────────────────────────────────
-# !! PASTE ALL YOUR FUNCTIONS HERE !!
-# Paste in this order:
-#   1. v, l, tpx, kqx, mu
-#   2. summation, simpson
-#   3. Whole_eoy, Whole_imm, Term_eoy, Term_imm, Endow_eoy, Endow_imm, Pure (single life)
-#   4. Whole_eoy_joint, Whole_imm_joint, Term_eoy_joint, Term_imm_joint,
-#      Endow_eoy_joint, Endow_imm_joint, Pure_joint
-#   5. dot_dot_a, no_dot_a, bar_a, dot_dot_t, no_dot_t, bar_t (single life)
-#   6. dot_dot_a_joint, no_dot_a_joint, bar_a_joint,
-#      dot_dot_t_joint, no_dot_t_joint, bar_t_joint
-#   7. tpxy, kqxy, muxy
-#   8. benefit, premium
+# ── 1. Discount ───────────────────────────────────────────────────────────────
+def v(i, n):
+    return 1 / ((1 + i) ** n)
+
+# ── 2. Numeric methods ────────────────────────────────────────────────────────
+def summation(f, lower, upper):
+    return sum(f(k) for k in range(lower, upper + 1))
+
+def simpson(f, lower, upper, n=1000):
+    if n % 2 != 0:
+        n += 1
+    h = (upper - lower) / n
+    total = f(lower) + f(upper)
+    for k in range(1, n):
+        if k % 2 == 0:
+            total += 2 * f(lower + k * h)
+        else:
+            total += 4 * f(lower + k * h)
+    return (h / 3) * total
+
+# ── 3. Life table ─────────────────────────────────────────────────────────────
+def l(x, table):
+    return table[int(x)]
+
+def tpx(t, x, table):
+    return l(x + t, table) / l(x, table)
+
+def kqx(k, x, table):
+    return tpx(k, x, table) - tpx(k + 1, x, table)
+
+def mu(x, t, table):
+    age = int(x + t)
+    age = min(age, max(table) - 1)
+    l_prev = l(age - 1, table) if age > min(table) else l(age, table)
+    l_curr = l(age, table)
+    l_next = l(age + 1, table)
+    if l_curr == 0:
+        return 0.0
+    return (l_prev - l_next) / (2 * l_curr)
+
+# ── 4. Single life assurance ──────────────────────────────────────────────────
+def Whole_eoy(x, i, table):
+    upper = max(table.keys()) - x - 1
+    term  = lambda k: v(i, k + 1) * kqx(k, x, table)
+    return summation(term, lower=0, upper=upper)
+
+def Whole_imm(x, i, table):
+    b = max(table.keys()) - x - 1
+    return simpson(lambda k: v(i, k + 1) * tpx(k, x, table) * mu(x, k, table), lower=0, upper=b)
+
+def Term_eoy(x, n, i, table):
+    term = lambda k: v(i, k + 1) * kqx(k, x, table)
+    return summation(term, lower=0, upper=n - 1)
+
+def Term_imm(x, n, i, table):
+    return simpson(lambda k: v(i, k + 1) * tpx(k, x, table) * mu(x, k, table), lower=0, upper=n - 1)
+
+def Pure(x, n, i, table):
+    return v(i, n) * tpx(n, x, table)
+
+def Endow_eoy(x, n, i, table):
+    return Term_eoy(x, n, i, table) + Pure(x, n, i, table)
+
+def Endow_imm(x, n, i, table):
+    return Term_imm(x, n, i, table) + Pure(x, n, i, table)
+
+# ── 5. Single life annuities ──────────────────────────────────────────────────
+def dot_dot_a(x, i, table):
+    return (1 - Whole_eoy(x, i, table)) / (i / (1 + i))
+
+def no_dot_a(x, i, table):
+    return dot_dot_a(x, i, table) - 1
+
+def bar_a(x, i, table):
+    b = max(table.keys()) - x - 1
+    return simpson(lambda k: v(i, k + 1) * tpx(k, x, table), lower=0, upper=b)
+
+def dot_dot_t(x, n, i, table):
+    return (1 - Term_eoy(x, n, i, table)) / (i / (1 + i))
+
+def no_dot_t(x, n, i, table):
+    return dot_dot_t(x, n, i, table) - 1
+
+def bar_t(x, n, i, table):
+    return simpson(lambda k: v(i, k + 1) * tpx(k, x, table), lower=0, upper=n)
+
+# ── 6. Joint life probabilities ───────────────────────────────────────────────
+def tpxy(t, x, table1, y, table2):
+    return tpx(t, x, table1) * tpx(t, y, table2)
+
+def kqxy(k, x, y, table1, table2):
+    kqx_ = tpx(k, x, table1) - tpx(k + 1, x, table1)
+    kqy_ = tpx(k, y, table2) - tpx(k + 1, y, table2)
+    return kqx_ + kqy_ - kqx_ * kqy_
+
+def muxy(x, y, t, table1, table2):
+    return mu(x, t, table1) + mu(y, t, table2)
+
+# ── 7. Joint life assurance ───────────────────────────────────────────────────
+def Whole_eoy_joint(x, y, i, table1, table2):
+    upper = min(max(table1.keys()) - x, max(table2.keys()) - y) - 1
+    term  = lambda k: v(i, k + 1) * kqxy(k, x, y, table1, table2)
+    return summation(term, lower=0, upper=upper)
+
+def Whole_imm_joint(x, y, i, table1, table2):
+    b = min(max(table1.keys()) - x, max(table2.keys()) - y) - 1
+    return simpson(lambda k: v(i, k + 1) * tpxy(k, x, table1, y, table2) * muxy(x, y, k, table1, table2), lower=0, upper=b)
+
+def Term_eoy_joint(x, y, n, i, table1, table2):
+    term = lambda k: v(i, k + 1) * kqxy(k, x, y, table1, table2)
+    return summation(term, lower=0, upper=n - 1)
+
+def Term_imm_joint(x, y, n, i, table1, table2):
+    return simpson(lambda k: v(i, k + 1) * tpxy(k, x, table1, y, table2) * muxy(x, y, k, table1, table2), lower=0, upper=n - 1)
+
+def Pure_joint(x, y, n, i, table1, table2):
+    return v(i, n) * tpxy(n, x, table1, y, table2)
+
+def Endow_eoy_joint(x, y, n, i, table1, table2):
+    return Term_eoy_joint(x, y, n, i, table1, table2) + Pure_joint(x, y, n, i, table1, table2)
+
+def Endow_imm_joint(x, y, n, i, table1, table2):
+    return Term_imm_joint(x, y, n, i, table1, table2) + Pure_joint(x, y, n, i, table1, table2)
+
+# ── 8. Joint life annuities ───────────────────────────────────────────────────
+def dot_dot_a_joint(x, y, i, table1, table2):
+    return (1 - Whole_eoy_joint(x, y, i, table1, table2)) / (i / (1 + i))
+
+def no_dot_a_joint(x, y, i, table1, table2):
+    return dot_dot_a_joint(x, y, i, table1, table2) - 1
+
+def bar_a_joint(x, y, i, table1, table2):
+    b = min(max(table1.keys()) - x, max(table2.keys()) - y) - 1
+    return simpson(lambda k: v(i, k + 1) * tpxy(k, x, table1, y, table2), lower=0, upper=b)
+
+def dot_dot_t_joint(x, y, n, i, table1, table2):
+    return (1 - Term_eoy_joint(x, y, n, i, table1, table2)) / (i / (1 + i))
+
+def no_dot_t_joint(x, y, n, i, table1, table2):
+    return dot_dot_t_joint(x, y, n, i, table1, table2) - 1
+
+def bar_t_joint(x, y, n, i, table1, table2):
+    return simpson(lambda k: v(i, k + 1) * tpxy(k, x, table1, y, table2), lower=0, upper=n)
+
+# ── 9. Benefit ────────────────────────────────────────────────────────────────
+def benefit(x, i, table, sum_assured, benefit_type, n=None, y=None, table2=None):
+    if benefit_type == 'whole_eoy':
+        A = Whole_eoy(x, i, table)
+    elif benefit_type == 'whole_imm':
+        A = Whole_imm(x, i, table)
+    elif benefit_type == 'term_eoy':
+        A = Term_eoy(x, n, i, table)
+    elif benefit_type == 'term_imm':
+        A = Term_imm(x, n, i, table)
+    elif benefit_type == 'endow_eoy':
+        A = Endow_eoy(x, n, i, table)
+    elif benefit_type == 'endow_imm':
+        A = Endow_imm(x, n, i, table)
+    elif benefit_type == 'pure':
+        A = Pure(x, n, i, table)
+    elif benefit_type == 'whole_eoy_joint':
+        A = Whole_eoy_joint(x, y, i, table, table2)
+    elif benefit_type == 'whole_imm_joint':
+        A = Whole_imm_joint(x, y, i, table, table2)
+    elif benefit_type == 'term_eoy_joint':
+        A = Term_eoy_joint(x, y, n, i, table, table2)
+    elif benefit_type == 'term_imm_joint':
+        A = Term_imm_joint(x, y, n, i, table, table2)
+    elif benefit_type == 'endow_eoy_joint':
+        A = Endow_eoy_joint(x, y, n, i, table, table2)
+    elif benefit_type == 'pure_joint':
+        A = Pure_joint(x, y, n, i, table, table2)
+    else:
+        raise ValueError(f"Unknown benefit_type: '{benefit_type}'")
+    return sum_assured * A
+
+# ── 10. Premium ───────────────────────────────────────────────────────────────
+def premium(x, i, table, sum_assured, benefit_type, annuity_type, n=None, y=None, table2=None, table_name=None, table2_name=None):
+    A = benefit(x, i, table, sum_assured, benefit_type, n=n, y=y, table2=table2)
+
+    if y is None:
+        if annuity_type == 'due':
+            ann = dot_dot_a(x, i, table)
+        elif annuity_type == 'immediate':
+            ann = no_dot_a(x, i, table)
+        elif annuity_type == 'continuous':
+            ann = bar_a(x, i, table)
+        elif annuity_type == 'term_due':
+            ann = dot_dot_t(x, n, i, table)
+        elif annuity_type == 'term_immediate':
+            ann = no_dot_t(x, n, i, table)
+        elif annuity_type == 'term_continuous':
+            ann = bar_t(x, n, i, table)
+    else:
+        if annuity_type == 'due':
+            ann = dot_dot_a_joint(x, y, i, table, table2)
+        elif annuity_type == 'immediate':
+            ann = no_dot_a_joint(x, y, i, table, table2)
+        elif annuity_type == 'continuous':
+            ann = bar_a_joint(x, y, i, table, table2)
+        elif annuity_type == 'term_due':
+            ann = dot_dot_t_joint(x, y, n, i, table, table2)
+        elif annuity_type == 'term_immediate':
+            ann = no_dot_t_joint(x, y, n, i, table, table2)
+        elif annuity_type == 'term_continuous':
+            ann = bar_t_joint(x, y, n, i, table, table2)
+
+    return A / ann
 # ─────────────────────────────────────────────────────────────────────────────
 
 # ── Benefit type options ──────────────────────────────────────────────────────
