@@ -18,8 +18,8 @@ from scipy import integrate as sci_integrate
 # ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(page_title="Life Insurance Pricing Engine", page_icon="📋", layout="centered")
 st.title("📋 Life Insurance Pricing Engine")
-st.markdown("Disclaimer: This is not financial advice!")
-st.caption("By Robert Luke | GitHub: X-RL9")
+st.markdown("Disclaimer! This is not financial advice!")
+st.caption("Made by Robert Luke | GitHub: X-RL9")
 
 # ── Pre-load mortality tables ─────────────────────────────────────────────────
 @st.cache_data
