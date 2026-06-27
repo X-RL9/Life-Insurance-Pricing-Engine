@@ -245,7 +245,8 @@ def benefit(x, i, table, sum_assured, benefit_type, n=None, y=None, table2=None)
 # ── 10. Premium ───────────────────────────────────────────────────────────────
 def premium(x, i, table, sum_assured, benefit_type, annuity_type, n=None, y=None, table2=None, table_name=None, table2_name=None, m=1):
     A = benefit(x, i, table, sum_assured, benefit_type, n=n, y=y, table2=table2)
-
+    ann = None
+    
     if y is None:
         if annuity_type == 'due':
             ann = dot_dot_a(x, i, table)
@@ -271,7 +272,9 @@ def premium(x, i, table, sum_assured, benefit_type, annuity_type, n=None, y=None
             ann = m_dot_dot_a(x, 4, i, table)
         elif annuity_type == 'q_immediate':
             ann = m_no_dot_a(x, 4, i, table)
-            
+        else:
+            raise ValueError(f"Unknown annuity_type: '{annuity_type}'")
+
     else:
         if annuity_type == 'due':
             ann = dot_dot_a_joint(x, y, i, table, table2)
@@ -285,6 +288,8 @@ def premium(x, i, table, sum_assured, benefit_type, annuity_type, n=None, y=None
             ann = no_dot_t_joint(x, y, n, i, table, table2)
         elif annuity_type == 'term_continuous':
             ann = bar_t_joint(x, y, n, i, table, table2)
+        else:
+            raise ValueError(f"Unknown annuity_type: '{annuity_type}'")
 
     return A / ann
 # ─────────────────────────────────────────────────────────────────────────────
