@@ -372,7 +372,7 @@ else:
 
 annuity_type = ANNUITY_OPTIONS[annuity_label]
 
-has_term = any(x in benefit_type for x in ['term', 'endow', 'pure'])
+has_term = any(b in benefit_type for b in ['term', 'endow', 'pure'])
 if has_term:
     n = st.number_input("Term (years)", min_value=1, max_value=60, value=20)
 else:
