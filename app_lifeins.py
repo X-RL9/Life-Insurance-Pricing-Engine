@@ -125,6 +125,33 @@ def no_dot_t(x, n, i, table):
 def bar_t(x, n, i, table):
     return simpson(lambda k: v(i, k + 1) * tpx(k, x, table), lower=0, upper=n)
 
+# ── M-thly paid annuities ─────────────────────────────────────────────────────
+def m_dot_dot_a(x, m, i, table):
+    """Whole life annuity due, paid m-thly."""
+    annuity   = dot_dot_a(x, i, table)
+    woolhouse = (m - 1) / (2 * m)
+    return annuity - woolhouse
+
+def m_no_dot_a(x, m, i, table):
+    """Whole life annuity immediate, paid m-thly."""
+    annuity   = no_dot_a(x, i, table)
+    woolhouse = (m - 1) / (2 * m)
+    return annuity + woolhouse
+
+def m_dot_dot_t(x, n, m, i, table):
+    """Term annuity due, paid m-thly."""
+    annuity   = dot_dot_t(x, n, i, table)
+    woolhouse = (m - 1) / (2 * m)
+    nex       = Pure(x, n, i, table)
+    return annuity - woolhouse * (1 - nex)
+
+def m_no_dot_t(x, n, m, i, table):
+    """Term annuity immediate, paid m-thly."""
+    annuity   = no_dot_t(x, n, i, table)
+    woolhouse = (m - 1) / (2 * m)
+    nex       = Pure(x, n, i, table)
+    return annuity + woolhouse * (1 - nex)
+
 # ── 6. Joint life probabilities ───────────────────────────────────────────────
 def tpxy(t, x, table1, y, table2):
     return tpx(t, x, table1) * tpx(t, y, table2)
@@ -232,6 +259,19 @@ def premium(x, i, table, sum_assured, benefit_type, annuity_type, n=None, y=None
             ann = no_dot_t(x, n, i, table)
         elif annuity_type == 'term_continuous':
             ann = bar_t(x, n, i, table)
+        elif annuity_type == 'm_due':
+            ann = m_dot_dot_a(x, 12, i, table)
+        elif annuity_type == 'm_immediate':
+            ann = m_no_dot_a(x, 12, i, table)
+        elif annuity_type == 'm_term_due':
+            ann = m_dot_dot_t(x, n, 12, i, table)
+        elif annuity_type == 'm_term_immediate':
+            ann = m_no_dot_t(x, n, 12, i, table)
+        elif annuity_type == 'q_due':
+            ann = m_dot_dot_a(x, 4, i, table)
+        elif annuity_type == 'q_immediate':
+            ann = m_no_dot_a(x, 4, i, table)
+            
     else:
         if annuity_type == 'due':
             ann = dot_dot_a_joint(x, y, i, table, table2)
@@ -277,6 +317,12 @@ ANNUITY_OPTIONS = {
     'Term - Annually in Advance':       'term_due',
     'Term - Annually in Arrear':        'term_immediate',
     'Term - Continuously':              'term_continuous',
+    'Monthly in Advance':               'm_due',
+    'Monthly in Arrear':                'm_immediate',
+    'Term - Monthly in Advance':        'm_term_due',
+    'Term - Monthly in Arrear':         'm_term_immediate',
+    'Quarterly in Advance':             'q_due',
+    'Quarterly in Arrear':              'q_immediate',
 }
 
 # ── UI ────────────────────────────────────────────────────────────────────────
@@ -285,6 +331,15 @@ st.header("1. Policy Details")
 policy_type  = st.selectbox("Number of Lives", ["Single Life", "Joint Life"])
 benefit_label  = st.selectbox("Benefit Type", list(BENEFIT_OPTIONS.keys()))
 annuity_label  = st.selectbox("Premium Payment", list(ANNUITY_OPTIONS.keys()))
+
+# ── Frequency selector (only shown for m-thly options) ───────────────────────
+if 'Monthly' in annuity_label:
+    m = 12
+elif 'Quarterly' in annuity_label:
+    m = 4
+else:
+    m = 1
+
 sum_assured    = st.number_input("Sum Assured (£)", min_value=1000, value=100000, step=1000)
 i              = st.number_input("Interest Rate", min_value=0.001, max_value=0.20, value=0.04, step=0.001, format="%.3f")
 
@@ -329,7 +384,8 @@ if st.button("Calculate Premium", type="primary"):
             annuity_type=annuity_type,
             n=n, y=y, table2=table2,
             table_name=table_name,
-            table2_name=table2_name
+            table2_name=table2_name,
+            m=m
         )
 
         col3, col4 = st.columns(2)
