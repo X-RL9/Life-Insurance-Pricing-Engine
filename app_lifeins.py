@@ -243,7 +243,7 @@ def benefit(x, i, table, sum_assured, benefit_type, n=None, y=None, table2=None)
     return sum_assured * A
 
 # ── 10. Premium ───────────────────────────────────────────────────────────────
-def premium(x, i, table, sum_assured, benefit_type, annuity_type, n=None, y=None, table2=None, table_name=None, table2_name=None):
+def premium(x, i, table, sum_assured, benefit_type, annuity_type, n=None, y=None, table2=None, table_name=None, table2_name=None, m=1):
     A = benefit(x, i, table, sum_assured, benefit_type, n=n, y=y, table2=table2)
 
     if y is None:
